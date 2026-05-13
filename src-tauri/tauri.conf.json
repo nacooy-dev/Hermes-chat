@@ -1,0 +1,44 @@
+{
+  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-config-schema/schema.json",
+  "productName": "Hermes Chat",
+  "version": "0.1.0",
+  "identifier": "com.hermes.chat",
+  "build": {
+    "frontendDist": "../web",
+    "devUrl": "http://localhost:18356",
+    "beforeDevCommand": "python3 -m http.server 18356 -d ../web",
+    "beforeBuildCommand": ""
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "title": "Hermes Chat",
+        "width": 900,
+        "height": 700,
+        "minWidth": 480,
+        "minHeight": 400,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "resources": {
+      "../bridge.py": "bridge.py",
+      "../nats": "nats"
+    },
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

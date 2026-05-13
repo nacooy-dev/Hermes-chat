@@ -101,12 +101,12 @@
   .chat::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
   /* Message bubbles */
-.msg {
+  .msg {
     max-width: 88%;
     padding: 10px 16px;
     border-radius: var(--radius);
     font-size: 14px;
-    line-height: 1.4;
+    line-height: 1.65;
     white-space: pre-wrap;
     word-break: break-word;
     animation: fadeIn 0.2s ease;
@@ -118,10 +118,12 @@
     border-bottom-right-radius: 3px;
   }
   .msg.bot {
-    align-self: flex-start;
-    background: var(--bot-msg);
-    border: 1px solid var(--border);
-    border-bottom-left-radius: 3px;
+    align-self: stretch;
+    max-width: none;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    padding: 4px 4px 4px 0;
   }
   .msg.error {
     align-self: center;
@@ -152,14 +154,15 @@
   .msg .meta .model { color: var(--accent); }
 
   /* Markdown content (rendered by marked) */
-  .md-content { line-height: 1.4; font-size: 14px; }
-  .md-content h1 { font-size: 18px; margin: 4px 0 2px; font-weight: 600; }
-  .md-content h2 { font-size: 16px; margin: 4px 0 2px; font-weight: 600; }
-  .md-content h3 { font-size: 14px; margin: 4px 0 2px; font-weight: 600; }
-  .md-content h4, .md-content h5, .md-content h6 { font-size: 13px; margin: 8px 0 4px; font-weight: 600; }
-  .md-content p  { margin: 2px 0; }
-  .md-content ul, .md-content ol { margin: 4px 0; padding-left: 20px; }
-  .md-content li { margin: 2px 0; }
+  .md-content { line-height: 1.75; font-size: 14px; }
+  .md-content h1 { font-size: 18px; margin: 16px 0 6px; font-weight: 600; }
+  .md-content h2 { font-size: 16px; margin: 14px 0 5px; font-weight: 600; }
+  .md-content h3 { font-size: 15px; margin: 12px 0 4px; font-weight: 600; }
+  .md-content h4, .md-content h5, .md-content h6 { font-size: 14px; margin: 10px 0 4px; font-weight: 600; }
+  .md-content p  { margin: 6px 0; }
+  .md-content p + p { margin-top: 10px; }
+  .md-content ul, .md-content ol { margin: 6px 0; padding-left: 22px; }
+  .md-content li { margin: 3px 0; }
   .md-content code {
     background: #2a2a2a;
     padding: 2px 6px;
@@ -298,6 +301,49 @@
     max-height: 120px;
   }
   .input-area textarea::placeholder { color: var(--text-dim); }
+
+  /* Command palette */
+  .cmd-palette {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    right: 0;
+    margin-bottom: 6px;
+    background: #141417;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    max-height: 280px;
+    overflow-y: auto;
+    display: none;
+    z-index: 100;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  }
+  .cmd-palette.open { display: block; }
+  .cmd-palette .item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text);
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+  .cmd-palette .item:last-child { border-bottom: none; }
+  .cmd-palette .item .name {
+    font-weight: 500;
+    color: var(--accent);
+    min-width: 70px;
+  }
+  .cmd-palette .item .desc {
+    color: var(--text-dim);
+    font-size: 12px;
+  }
+  .cmd-palette .item:hover,
+  .cmd-palette .item.selected {
+    background: rgba(79, 140, 255, 0.08);
+  }
+  .input-row { position: relative; }
   .input-area .send-btn {
     padding: 6px 14px;
     border: none;
@@ -508,8 +554,10 @@
       <button class="attach-btn" id="attachBtn" title="上传文件" onclick="fileInput.click()">+</button>
       <input type="file" id="fileInput" multiple hidden
              onchange="handleFiles(this.files)">
+      <div class="cmd-palette" id="cmdPalette"></div>
       <textarea id="input" placeholder="输入消息..." autofocus rows="2"
-                onkeydown="if(event.key==='Enter' && !event.shiftKey && !event.isComposing){event.preventDefault();send()}"></textarea>
+                onkeydown="handleKey(event)"
+                oninput="onInputChange()"></textarea>
       <button class="send-btn" id="sendBtn" onclick="send()">发送</button>
     </div>
   </div>
@@ -529,7 +577,121 @@ const welcome = document.getElementById('welcome');
 const modelSelect = document.getElementById('modelSelect');
 const filePreview = document.getElementById('filePreview');
 const fileInput = document.getElementById('fileInput');
+const cmdPalette = document.getElementById('cmdPalette');
 let attachedFiles = [];
+
+let COMMANDS = [
+  { name: '/help',   desc: '显示可用命令' },
+  { name: '/new',    desc: '新建会话，重置上下文' },
+  { name: '/clear',  desc: '清空聊天记录' },
+  { name: '/model',  desc: '切换模型（弹出选择面板）' },
+];
+
+let cmdSelectedIdx = -1;
+
+function handleKey(e) {
+  if (e.isComposing) return;
+  const paletteOpen = cmdPalette.classList.contains('open');
+  if (paletteOpen) {
+    const items = cmdPalette.querySelectorAll('.item');
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      cmdSelectedIdx = Math.min(cmdSelectedIdx + 1, items.length - 1);
+      highlightCmd();
+      return;
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      cmdSelectedIdx = Math.max(cmdSelectedIdx - 1, 0);
+      highlightCmd();
+      return;
+    }
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (cmdSelectedIdx >= 0 && items[cmdSelectedIdx]) {
+        selectCmd(cmdSelectedIdx);
+      }
+      return;
+    }
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      if (cmdSelectedIdx >= 0 && items[cmdSelectedIdx]) {
+        selectCmd(cmdSelectedIdx);
+      }
+      return;
+    }
+    if (e.key === 'Escape') {
+      closeCmdPalette();
+      return;
+    }
+  }
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    send();
+  }
+}
+
+function onInputChange() {
+  const val = input.value;
+  const isCmd = val.startsWith('/') && !val.includes(' ');
+  if (isCmd) {
+    const q = val.slice(1);
+    const matches = COMMANDS.filter(c => c.name.slice(1).includes(q) || c.name.includes(q));
+    renderCmdPalette(matches);
+    cmdSelectedIdx = matches.length > 0 ? 0 : -1;
+    highlightCmd();
+  } else {
+    closeCmdPalette();
+  }
+}
+
+function renderCmdPalette(items) {
+  if (!items.length) { closeCmdPalette(); return; }
+  cmdPalette.innerHTML = items.map((c, i) =>
+    `<div class="item" data-idx="${i}" onclick="selectCmd(${i})">
+      <span class="name">${c.name}</span>
+      <span class="desc">${c.desc}</span>
+    </div>`
+  ).join('');
+  cmdPalette.classList.add('open');
+}
+
+function closeCmdPalette() {
+  cmdPalette.classList.remove('open');
+  cmdSelectedIdx = -1;
+}
+
+function highlightCmd() {
+  cmdPalette.querySelectorAll('.item').forEach((el, i) => {
+    el.classList.toggle('selected', i === cmdSelectedIdx);
+  });
+  if (cmdSelectedIdx >= 0) {
+    const el = cmdPalette.querySelector('.item.selected');
+    el?.scrollIntoView({ block: 'nearest' });
+  }
+}
+
+function selectCmd(idx) {
+  const item = cmdPalette.querySelectorAll('.item')[idx];
+  if (!item) return;
+  const name = item.querySelector('.name').textContent;
+  input.value = name + ' ';
+  input.focus();
+  closeCmdPalette();
+  // If it's a command with no args needed, execute immediately
+  if (name === '/new' || name === '/clear' || name === '/help') {
+    send();
+  }
+  if (name === '/model') {
+    // /model with no args shows picker
+    setTimeout(() => {
+      const text = input.value.trim();
+      if (text === '/model') {
+        send();
+      }
+    }, 50);
+  }
+}
 
 function handleFiles(files) {
   for (const f of files) {
@@ -644,6 +806,8 @@ function connect() {
     input.disabled = false;
     sendBtn.disabled = false;
     input.focus();
+    // Fetch available commands
+    ws.send(JSON.stringify({ type: "list_commands" }));
   };
 
   ws.onclose = () => {
@@ -661,6 +825,14 @@ function connect() {
 
   ws.onmessage = (event) => {
     const data = JSON.parse(event.data);
+
+    if (data.type === 'commands_list') {
+      COMMANDS = (data.commands || []).map(c => ({
+        name: '/' + c.command.replace(/^\/*/, ''),
+        desc: c.description || ''
+      }));
+      return;
+    }
 
     if (data.type === 'approval') {
       showApproval(data);
@@ -738,8 +910,6 @@ function send() {
     return;
   }
 
-  welcome.style.display = 'none';
-
   // Append file references to message
   let fullText = text;
   if (attachedFiles.length) {
@@ -748,19 +918,7 @@ function send() {
     );
     fullText = text ? text + '\n\n' + refs.join('\n') : refs.join('\n');
   }
-  addMsg('user', fullText);
-  saveChat();
-  addThinking();
-
-  ws.send(JSON.stringify({
-    message: fullText,
-    session_id: sessionId,
-    ...JSON.parse(modelSelect.value)
-  }));
-
-  // Clear attached files
-  attachedFiles = [];
-  filePreview.innerHTML = '';
+  sendText(fullText);
 }
 
 function handleCommand(text) {
@@ -812,8 +970,23 @@ function handleCommand(text) {
       return;
 
     default:
-      addMsg('system', '❌ 未知命令 /' + cmd + '，发送 /help 查看可用命令');
+      // Unknown command — send to AI as a normal message
+      return sendText(text);
   }
+}
+
+function sendText(fullText) {
+  welcome.style.display = 'none';
+  addMsg('user', fullText);
+  saveChat();
+  addThinking();
+  ws.send(JSON.stringify({
+    message: fullText,
+    session_id: sessionId,
+    ...JSON.parse(modelSelect.value)
+  }));
+  attachedFiles = [];
+  filePreview.innerHTML = '';
 }
 
 function showModelPicker() {
@@ -920,6 +1093,11 @@ function removeThinking() {
 function updateSendBtn() {
   sendBtn.textContent = waiting ? '...' : '发送';
 }
+
+  // Close command palette on click outside
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.input-row')) closeCmdPalette();
+  });
 
   // Start
   loadChat();

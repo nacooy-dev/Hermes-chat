@@ -260,6 +260,12 @@ async def ws_handler(websocket):
                     fut.set_result(data.get("choice", "deny"))
                 continue
 
+            # Handle list_commands request
+            if data.get("type") == "list_commands":
+                cmds = await _fetch_commands()
+                await websocket.send(json.dumps({"type": "commands_list", "commands": cmds}))
+                continue
+
             query = data.get("message", "")
             if not query:
                 await websocket.send(json.dumps(
@@ -379,6 +385,41 @@ async def _nats_call_hermes(query, model, provider, sid):
         "error": err if proc.returncode != 0 else None,
     }
 
+
+# ── Command list (from Hermes) ──────────────────────
+
+_cmd_cache: list[dict] | None = None
+
+async def _fetch_commands() -> list[dict]:
+    global _cmd_cache
+    if _cmd_cache is not None:
+        return _cmd_cache
+    try:
+        script = f"""
+import sys, json
+sys.path.insert(0, {repr(HERMES_AGENT_PATH)})
+from hermes_cli.commands import slack_app_manifest
+manifest = slack_app_manifest()
+for s in manifest['features']['slash_commands']:
+    print(json.dumps({{"command": s["command"], "description": s.get("description", "")}}, ensure_ascii=False))
+"""
+        proc = await asyncio.create_subprocess_exec(
+            HERMES_VENV_PYTHON, "-c", script,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=15)
+        _cmd_cache = []
+        for line in stdout.decode().strip().split("\n"):
+            line = line.strip()
+            if line:
+                try:
+                    _cmd_cache.append(json.loads(line))
+                except json.JSONDecodeError:
+                    pass
+        return _cmd_cache or []
+    except Exception:
+        return []
 
 async def start_nats():
     """Connect to NATS."""
