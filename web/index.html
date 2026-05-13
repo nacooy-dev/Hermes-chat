@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hermes Chat</title>
+<style>
+  :root {
+    --bg: #0d0d0d;
+    --surface: #1a1a1a;
+    --border: #2a2a2a;
+    --text: #e0e0e0;
+    --text-dim: #888;
+    --accent: #4f8cff;
+    --accent-hover: #6ba0ff;
+    --user-msg: #1e2a45;
+    --bot-msg: #1a1a1a;
+    --success: #34d399;
+    --error: #f87171;
+    --radius: 10px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 0 12px;
+  }
+
+  /* Centered container */
+  .container {
+    width: 100%;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Header */
+  .header {
+    padding: 14px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+  .header h1 {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: -0.3px;
+  }
+  .status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--text-dim);
+    transition: background 0.3s;
+  }
+  .status-dot.online { background: var(--success); }
+  .status-dot.offline { background: var(--error); }
+
+  /* Model selector */
+  .model-selector {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .model-selector select {
+    padding: 4px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 12px;
+    cursor: pointer;
+    outline: none;
+  }
+  .model-selector select:focus { border-color: var(--accent); }
+
+  /* Chat area */
+  .chat {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .chat::-webkit-scrollbar { width: 6px; }
+  .chat::-webkit-scrollbar-track { background: transparent; }
+  .chat::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* Message bubbles */
+.msg {
+    max-width: 88%;
+    padding: 10px 16px;
+    border-radius: var(--radius);
+    font-size: 14px;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-break: break-word;
+    animation: fadeIn 0.2s ease;
+  }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+  .msg.user {
+    align-self: flex-end;
+    background: var(--user-msg);
+    border-bottom-right-radius: 3px;
+  }
+  .msg.bot {
+    align-self: flex-start;
+    background: var(--bot-msg);
+    border: 1px solid var(--border);
+    border-bottom-left-radius: 3px;
+  }
+  .msg.error {
+    align-self: center;
+    background: rgba(248, 113, 113, 0.1);
+    border: 1px solid rgba(248, 113, 113, 0.3);
+    color: var(--error);
+    font-size: 13px;
+    max-width: 90%;
+    text-align: center;
+  }
+  .msg.system {
+    align-self: center;
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    font-size: 12px;
+    max-width: 100%;
+    text-align: center;
+  }
+  .msg .meta {
+    font-size: 10px;
+    color: var(--text-dim);
+    margin-top: 6px;
+    display: flex;
+    gap: 8px;
+  }
+  .msg .meta .elapsed { color: var(--text-dim); }
+  .msg .meta .model { color: var(--accent); }
+
+  /* Markdown content (rendered by marked) */
+  .md-content { line-height: 1.4; font-size: 14px; }
+  .md-content h1 { font-size: 18px; margin: 4px 0 2px; font-weight: 600; }
+  .md-content h2 { font-size: 16px; margin: 4px 0 2px; font-weight: 600; }
+  .md-content h3 { font-size: 14px; margin: 4px 0 2px; font-weight: 600; }
+  .md-content h4, .md-content h5, .md-content h6 { font-size: 13px; margin: 8px 0 4px; font-weight: 600; }
+  .md-content p  { margin: 2px 0; }
+  .md-content ul, .md-content ol { margin: 4px 0; padding-left: 20px; }
+  .md-content li { margin: 2px 0; }
+  .md-content code {
+    background: #2a2a2a;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-family: "Fira Code", "Cascadia Code", Menlo, monospace;
+    color: #a8d8ff;
+  }
+  .md-content pre {
+    background: #1e1e1e;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin: 10px 0;
+    overflow-x: auto;
+  }
+  .md-content pre code {
+    background: transparent;
+    padding: 0;
+    font-size: 13px;
+    color: var(--text);
+  }
+  .md-content blockquote {
+    border-left: 3px solid var(--accent);
+    padding: 6px 14px;
+    color: var(--text-dim);
+    background: rgba(79, 140, 255, 0.05);
+    border-radius: 0 6px 6px 0;
+    margin: 10px 0;
+  }
+  .md-content table {
+    border-collapse: collapse;
+    margin: 10px 0;
+    font-size: 13px;
+    min-width: 200px;
+  }
+  .md-content th, .md-content td {
+    border: 1px solid var(--border);
+    padding: 6px 12px;
+    text-align: left;
+  }
+  .md-content th { background: #2a2a2a; font-weight: 600; }
+  .md-content tr:nth-child(even) { background: rgba(255,255,255,0.02); }
+  .md-content a { color: var(--accent); text-decoration: none; }
+  .md-content a:hover { text-decoration: underline; }
+  .md-content hr { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
+  .md-content img { max-width: 100%; border-radius: 6px; }
+  .md-content strong { font-weight: 600; color: var(--text); }
+  .md-content em { font-style: italic; }
+
+  /* Thinking indicator */
+  .thinking {
+    align-self: flex-start;
+    display: flex;
+    gap: 4px;
+    padding: 12px 16px;
+    background: var(--bot-msg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    border-bottom-left-radius: 3px;
+  }
+  .thinking span {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--text-dim);
+    animation: bounce 1.2s infinite;
+  }
+  .thinking span:nth-child(2) { animation-delay: 0.2s; }
+  .thinking span:nth-child(3) { animation-delay: 0.4s; }
+  .thinking .thinking-text {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-left: 6px;
+    animation: none;
+    width: auto;
+    height: auto;
+    border-radius: 0;
+    background: transparent;
+  }
+  @keyframes bounce {
+    0%, 80%, 100% { transform: translateY(0); }
+    40% { transform: translateY(-6px); }
+  }
+
+  /* Input area */
+  .input-area {
+    padding: 8px 48px 12px;
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .input-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 2px;
+    transition: border-color 0.15s;
+  }
+  .input-row:focus-within { border-color: var(--accent); }
+  .attach-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 400;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 6px;
+    transition: all 0.15s;
+    font-family: inherit;
+  }
+  .attach-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .input-area textarea {
+    flex: 1;
+    border: none;
+    background: transparent;
+    padding: 10px 6px;
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.5;
+    outline: none;
+    font-family: inherit;
+    resize: none;
+    min-height: 44px;
+    max-height: 120px;
+  }
+  .input-area textarea::placeholder { color: var(--text-dim); }
+  .input-area .send-btn {
+    padding: 6px 14px;
+    border: none;
+    border-radius: 7px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s;
+    margin: 2px;
+  }
+  .send-btn:hover { background: var(--accent-hover); }
+  .send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* File preview chips */
+  .file-preview {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+    min-height: 0;
+  }
+  .file-preview:empty { display: none; }
+  .file-chip {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 8px 4px 10px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--text-dim);
+    max-width: 220px;
+  }
+  .file-chip .name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+  }
+  .file-chip .remove {
+    cursor: pointer;
+    opacity: 0.35;
+    font-size: 14px;
+    line-height: 1;
+    padding: 0 2px;
+  }
+  .file-chip .remove:hover { opacity: 1; }
+  .file-chip img.preview {
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    object-fit: cover;
+  }
+
+  /* Inline picker (model selector etc) */
+  .picker {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: center;
+    padding: 4px 0;
+  }
+  .picker-btn {
+    padding: 6px 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: inherit;
+  }
+  .picker-btn:hover {
+    border-color: var(--accent);
+    background: rgba(79, 140, 255, 0.08);
+  }
+  .picker-btn.active {
+    border-color: var(--accent);
+    background: rgba(79, 140, 255, 0.12);
+    color: #fff;
+  }
+
+  /* Approval dialog */
+  .approval-box {
+    align-self: center;
+    background: rgba(79, 140, 255, 0.06);
+    border: 1px solid rgba(79, 140, 255, 0.2);
+    border-radius: 10px;
+    padding: 12px 16px;
+    max-width: 90%;
+    text-align: center;
+  }
+  .approval-box .desc {
+    color: var(--text);
+    font-size: 13px;
+    margin-bottom: 6px;
+    word-break: break-word;
+  }
+  .approval-box .cmd {
+    color: var(--text-dim);
+    font-size: 12px;
+    font-family: "Fira Code", Menlo, monospace;
+    background: rgba(0,0,0,0.3);
+    padding: 6px 10px;
+    border-radius: 6px;
+    margin-bottom: 10px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    text-align: left;
+  }
+  .approval-actions {
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .approval-actions button {
+    padding: 5px 14px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 12px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.15s;
+  }
+  .approval-actions button:hover { border-color: var(--accent); }
+  .approval-actions .btn-allow { border-color: var(--success); color: var(--success); }
+  .approval-actions .btn-allow:hover { background: rgba(52, 211, 153, 0.1); }
+  .approval-actions .btn-deny { border-color: var(--error); color: var(--error); }
+  .approval-actions .btn-deny:hover { background: rgba(248, 113, 113, 0.1); }
+
+  /* Welcome screen */
+  .welcome {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-dim);
+    text-align: center;
+    gap: 8px;
+  }
+  .welcome .icon { display: none; }
+  .welcome h2 { font-size: 18px; font-weight: 500; color: var(--text); }
+  .welcome p { font-size: 13px; line-height: 1.6; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+  <div class="header">
+    <h1>Hermes Chat</h1>
+    <div class="model-selector">
+      <select id="modelSelect">
+        <optgroup label="SenseNova">
+          <option value='{"model":"deepseek-v4-flash","provider":"sensenova"}'>DeepSeek V4 Flash</option>
+          <option value='{"model":"deepseek-v4-pro","provider":"sensenova"}'>DeepSeek V4 Pro</option>
+          <option value='{"model":"sensenova-6.7-flash-lite","provider":"sensenova"}'>SenseNova Flash Lite</option>
+        </optgroup>
+        <optgroup label="OpenCode Zen (Free)">
+          <option value='{"model":"deepseek-v4-flash-free","provider":"opencode"}'>DeepSeek V4 Flash</option>
+          <option value='{"model":"minimax-m2.5-free","provider":"opencode"}'>MiniMax M2.5</option>
+          <option value='{"model":"kimi-k2.5-free","provider":"opencode"}'>Kimi K2.5</option>
+          <option value='{"model":"glm-4.7-free","provider":"opencode"}'>GLM 4.7</option>
+          <option value='{"model":"qwen3.6-plus-free","provider":"opencode"}'>Qwen 3.6 Plus</option>
+          <option value='{"model":"mimo-v2-flash-free","provider":"opencode"}'>MiMo V2 Flash</option>
+          <option value='{"model":"ling-2.6-flash-free","provider":"opencode"}'>Ling 2.6 Flash</option>
+        </optgroup>
+        <optgroup label="NVIDIA NIM">
+          <option value='{"model":"minimaxai/minimax-m2.5","provider":"nvidia"}'>MiniMax M2.5</option>
+          <option value='{"model":"qwen/qwen3.5-122b-a10b","provider":"nvidia"}'>Qwen 3.5 122B</option>
+        </optgroup>
+        <optgroup label="OpenCode Zen (付费)">
+          <option value='{"model":"deepseek-v4-pro","provider":"opencode"}'>DeepSeek V4 Pro</option>
+          <option value='{"model":"gpt-5-nano","provider":"opencode"}'>GPT 5 Nano</option>
+          <option value='{"model":"gpt-5.4-mini","provider":"opencode"}'>GPT 5.4 Mini</option>
+          <option value='{"model":"claude-sonnet-4-6","provider":"opencode"}'>Claude Sonnet 4.6</option>
+          <option value='{"model":"claude-haiku-4-5","provider":"opencode"}'>Claude Haiku 4.5</option>
+          <option value='{"model":"gemini-3-flash","provider":"opencode"}'>Gemini 3 Flash</option>
+          <option value='{"model":"kimi-k2.6","provider":"opencode"}'>Kimi K2.6</option>
+          <option value='{"model":"minimax-m2.7","provider":"opencode"}'>MiniMax M2.7</option>
+          <option value='{"model":"glm-5","provider":"opencode"}'>GLM 5</option>
+        </optgroup>
+      </select>
+      <div class="status">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="statusText">Connecting...</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="chat" id="chat">
+    <div class="welcome" id="welcome">
+      <h2>Hermes WebChat</h2>
+      <p>通过 WebSocket 直连 Hermes Agent<br>右上角选择模型后开始对话</p>
+    </div>
+  </div>
+
+  <div class="input-area">
+    <div class="file-preview" id="filePreview"></div>
+    <div class="input-row">
+      <button class="attach-btn" id="attachBtn" title="上传文件" onclick="fileInput.click()">+</button>
+      <input type="file" id="fileInput" multiple hidden
+             onchange="handleFiles(this.files)">
+      <textarea id="input" placeholder="输入消息..." autofocus rows="2"
+                onkeydown="if(event.key==='Enter' && !event.shiftKey && !event.isComposing){event.preventDefault();send()}"></textarea>
+      <button class="send-btn" id="sendBtn" onclick="send()">发送</button>
+    </div>
+  </div>
+
+<script>
+const WS_URL = 'ws://127.0.0.1:6789';
+let ws = null;
+let sessionId = null;
+let waiting = false;
+
+const chat = document.getElementById('chat');
+const input = document.getElementById('input');
+const sendBtn = document.getElementById('sendBtn');
+const statusDot = document.getElementById('statusDot');
+const statusText = document.getElementById('statusText');
+const welcome = document.getElementById('welcome');
+const modelSelect = document.getElementById('modelSelect');
+const filePreview = document.getElementById('filePreview');
+const fileInput = document.getElementById('fileInput');
+let attachedFiles = [];
+
+function handleFiles(files) {
+  for (const f of files) {
+    if (attachedFiles.length >= 5) break;
+    attachedFiles.push(f);
+    renderFileChip(f);
+  }
+  fileInput.value = '';
+}
+
+function removeFile(idx) {
+  attachedFiles.splice(idx, 1);
+  renderFileChips();
+}
+
+function renderFileChips() {
+  filePreview.innerHTML = '';
+  attachedFiles.forEach((f, i) => renderFileChip(f, i));
+}
+
+function renderFileChip(f, idx) {
+  const i = idx ?? attachedFiles.indexOf(f);
+  const chip = document.createElement('div');
+  chip.className = 'file-chip';
+  const isImage = f.type.startsWith('image/');
+  if (isImage) {
+    const img = document.createElement('img');
+    img.className = 'preview';
+    img.src = URL.createObjectURL(f);
+    chip.appendChild(img);
+  } else {
+    const icon = document.createElement('span');
+    icon.textContent = '📄';
+    chip.appendChild(icon);
+  }
+  const name = document.createElement('span');
+  name.className = 'name';
+  name.textContent = f.name.length > 25 ? f.name.slice(0, 22) + '...' : f.name;
+  chip.appendChild(name);
+  const rm = document.createElement('span');
+  rm.className = 'remove';
+  rm.textContent = '×';
+  rm.onclick = () => removeFile(i);
+  chip.appendChild(rm);
+  filePreview.appendChild(chip);
+}
+
+// Configure marked (v9+ API)
+marked.use({ gfm: true, breaks: false });
+
+const STORAGE_KEY = 'hermes_chat';
+
+const MAX_MESSAGES = 50;
+const STORAGE_TTL_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
+
+function saveChat() {
+  const items = [];
+  chat.querySelectorAll(':scope > .msg').forEach(el => {
+    const role = el.classList.contains('user') ? 'user'
+               : el.classList.contains('bot') ? 'bot'
+               : el.classList.contains('system') ? 'system'
+               : null;
+    if (!role) return;
+    const content = role === 'bot'
+      ? el.querySelector('.md-content')?.textContent || ''
+      : el.textContent || '';
+    const meta = el.querySelector('.meta');
+    let extra = {};
+    if (meta) {
+      const e = meta.querySelector('.elapsed');
+      const m = meta.querySelector('.model');
+      if (e) extra.elapsed = e.textContent;
+      if (m) extra.model = m.textContent;
+    }
+    items.push({ role, content, extra });
+  });
+  // Keep only last N messages
+  if (items.length > MAX_MESSAGES) {
+    items.splice(0, items.length - MAX_MESSAGES);
+  }
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    sessionId,
+    messages: items,
+    savedAt: Date.now(),
+  }));
+}
+
+function loadChat() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) return;
+  try {
+    const data = JSON.parse(raw);
+    // Expired? discard
+    if (data.savedAt && Date.now() - data.savedAt > STORAGE_TTL_MS) {
+      localStorage.removeItem(STORAGE_KEY);
+      return;
+    }
+    if (data.sessionId) sessionId = data.sessionId;
+    if (data.messages?.length) {
+      welcome.style.display = 'none';
+      data.messages.forEach(m => addMsg(m.role, m.content, m.extra || {}));
+    }
+  } catch (e) {}
+}
+
+function connect() {
+  ws = new WebSocket(WS_URL);
+
+  ws.onopen = () => {
+    statusDot.className = 'status-dot online';
+    statusText.textContent = 'Connected';
+    input.disabled = false;
+    sendBtn.disabled = false;
+    input.focus();
+  };
+
+  ws.onclose = () => {
+    statusDot.className = 'status-dot offline';
+    statusText.textContent = 'Disconnected. Reconnecting...';
+    input.disabled = true;
+    sendBtn.disabled = true;
+    setTimeout(connect, 2000);
+  };
+
+  ws.onerror = () => {
+    statusDot.className = 'status-dot offline';
+    statusText.textContent = 'Connection error';
+  };
+
+  ws.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+
+    if (data.type === 'approval') {
+      showApproval(data);
+      return;
+    }
+
+    if (data.type === 'done') {
+      return;
+    }
+
+    if (data.type === 'stream') {
+      // First token arrived: swap thinking → stream target
+      const hadThinking = removeThinking();
+      if (hadThinking || !window._streamTarget) {
+        const div = document.createElement('div');
+        div.className = 'msg bot';
+        const wrapper = document.createElement('div');
+        wrapper.className = 'md-content';
+        wrapper.id = 'stream-target';
+        div.appendChild(wrapper);
+        chat.appendChild(div);
+        window._streamTarget = wrapper;
+      }
+      // Append token in real-time
+      const target = window._streamTarget;
+      if (target) {
+        target.textContent += data.token;
+        chat.scrollTop = chat.scrollHeight;
+      }
+      return;
+    }
+
+    // Final response
+    waiting = false;
+    removeThinking();
+    updateSendBtn();
+
+    if (data.type === 'error') {
+      addMsg('system', data.content || 'Unknown error');
+      return;
+    }
+
+    if (data.success) {
+      sessionId = data.session_id || sessionId;
+      const sel = JSON.parse(modelSelect.value);
+
+      // Finalize: render markdown in stream target
+      const target = window._streamTarget;
+      if (target) {
+        target.innerHTML = marked.parse(target.textContent || '');
+        // Add meta below
+        const meta = document.createElement('div');
+        meta.className = 'meta';
+        if (data.elapsed) meta.innerHTML += `<span class="elapsed">${data.elapsed}s</span>`;
+        if (sel.model) meta.innerHTML += `<span class="model">${sel.model}</span>`;
+        if (data.session_id) meta.innerHTML += `<span>#${data.session_id.slice(-8)}</span>`;
+        target.parentElement.appendChild(meta);
+        window._streamTarget = null;
+        saveChat();
+      }
+} else {
+      addMsg('error', data.error || 'Request failed');
+    }
+  }
+}
+
+function send() {
+  const text = input.value.trim();
+  if ((!text && !attachedFiles.length) || waiting || !ws || ws.readyState !== WebSocket.OPEN) return;
+  input.value = '';
+
+  // Handle slash commands
+  if (text.startsWith('/')) {
+    handleCommand(text);
+    return;
+  }
+
+  welcome.style.display = 'none';
+
+  // Append file references to message
+  let fullText = text;
+  if (attachedFiles.length) {
+    const refs = attachedFiles.map(f =>
+      `[${f.type.startsWith('image/') ? '图片' : '文件'}: ${f.name} (${(f.size / 1024).toFixed(1)}KB)]`
+    );
+    fullText = text ? text + '\n\n' + refs.join('\n') : refs.join('\n');
+  }
+  addMsg('user', fullText);
+  saveChat();
+  addThinking();
+
+  ws.send(JSON.stringify({
+    message: fullText,
+    session_id: sessionId,
+    ...JSON.parse(modelSelect.value)
+  }));
+
+  // Clear attached files
+  attachedFiles = [];
+  filePreview.innerHTML = '';
+}
+
+function handleCommand(text) {
+  const parts = text.slice(1).trim().split(/\s+/);
+  const cmd = parts[0].toLowerCase();
+  const args = parts.slice(1);
+
+  switch (cmd) {
+    case 'help':
+      addMsg('system', [
+        '/help  — 显示可用命令',
+        '/new   — 新建会话，重置上下文',
+        '/clear — 清空聊天记录',
+        '/model — 切换模型（不带参数弹出选择面板）',
+      ].join('\n'));
+      return;
+
+    case 'new':
+      sessionId = null;
+      localStorage.removeItem(STORAGE_KEY);
+      chat.querySelectorAll('.msg').forEach(el => el.remove());
+      window._streamTarget = null;
+      welcome.style.display = '';
+      addMsg('system', '✅ 已新建会话');
+      saveChat();
+      return;
+
+    case 'clear':
+      localStorage.removeItem(STORAGE_KEY);
+      chat.querySelectorAll('.msg').forEach(el => el.remove());
+      window._streamTarget = null;
+      welcome.style.display = '';
+      return;
+
+    case 'model':
+      if (args.length > 0) {
+        for (let i = 0; i < modelSelect.options.length; i++) {
+          const val = JSON.parse(modelSelect.options[i].value);
+          if (val.model === args[0]) {
+            modelSelect.selectedIndex = i;
+            addMsg('system', '✅ 已切换到 ' + args[0]);
+            return;
+          }
+        }
+        addMsg('system', '❌ 未找到模型: ' + args[0]);
+        return;
+      }
+      showModelPicker();
+      return;
+
+    default:
+      addMsg('system', '❌ 未知命令 /' + cmd + '，发送 /help 查看可用命令');
+  }
+}
+
+function showModelPicker() {
+  const container = document.createElement('div');
+  container.className = 'msg system';
+
+  const label = document.createElement('div');
+  label.textContent = '选择模型：';
+  label.style.cssText = 'margin-bottom:6px;font-size:12px;color:var(--text-dim);';
+  container.appendChild(label);
+
+  const picker = document.createElement('div');
+  picker.className = 'picker';
+  container.appendChild(picker);
+
+  for (let i = 0; i < modelSelect.options.length; i++) {
+    const opt = modelSelect.options[i];
+    const val = JSON.parse(opt.value);
+    const btn = document.createElement('button');
+    btn.className = 'picker-btn' + (opt.selected ? ' active' : '');
+    btn.textContent = opt.text;
+    btn.onclick = () => {
+      modelSelect.selectedIndex = i;
+      picker.querySelectorAll('.picker-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      setTimeout(() => container.remove(), 800);
+    };
+    picker.appendChild(btn);
+  }
+
+  chat.appendChild(container);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function showApproval(data) {
+  const box = document.createElement('div');
+  box.className = 'approval-box msg system';
+  box.innerHTML = `
+    <div class="desc">${escHtml(data.description || '允许执行以下操作？')}</div>
+    <div class="cmd">${escHtml(data.command || '')}</div>
+    <div class="approval-actions">
+      <button class="btn-allow" data-choice="once">允许一次</button>
+      ${data.allow_permanent ? '<button class="btn-allow" data-choice="always">始终允许</button>' : ''}
+      <button class="btn-deny" data-choice="deny">拒绝</button>
+    </div>`;
+  box.querySelectorAll('.approval-actions button').forEach(btn => {
+    btn.onclick = () => {
+      ws.send(JSON.stringify({ type: "approval_response", choice: btn.dataset.choice }));
+      box.remove();
+    };
+  });
+  chat.appendChild(box);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function escHtml(s) {
+  if (!s) return '';
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function addMsg(role, content, extra = {}) {
+  const div = document.createElement('div');
+  div.className = `msg ${role}`;
+
+  if (role === 'bot') {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'md-content';
+    wrapper.innerHTML = marked.parse(content || '');
+    div.appendChild(wrapper);
+  } else {
+    div.textContent = content;
+  }
+
+  if (role === 'bot' && (extra.elapsed || extra.session)) {
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    if (extra.elapsed) meta.innerHTML += `<span class="elapsed">${extra.elapsed}s</span>`;
+    if (extra.model) meta.innerHTML += `<span class="model">${extra.model}</span>`;
+    if (extra.session) meta.innerHTML += `<span>#${extra.session.slice(-8)}</span>`;
+    div.appendChild(meta);
+  }
+
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function addThinking() {
+  const sel = JSON.parse(modelSelect.value);
+  const modelName = sel.model || 'Hermes';
+  const div = document.createElement('div');
+  div.className = 'thinking';
+  div.id = 'thinking-indicator';
+  div.innerHTML = '<span></span><span></span><span></span><span class="thinking-text">' + modelName + ' 处理中...</span>';
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function removeThinking() {
+  const el = document.getElementById('thinking-indicator');
+  if (el) { el.remove(); return true; }
+  return false;
+}
+
+function updateSendBtn() {
+  sendBtn.textContent = waiting ? '...' : '发送';
+}
+
+  // Start
+  loadChat();
+  connect();
+  </script>
+</body>
+</html>
