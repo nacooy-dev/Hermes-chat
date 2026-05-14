@@ -95,7 +95,6 @@ async def stream_hermes(query: str, model: str = DEFAULT_MODEL,
                          provider: str = DEFAULT_PROVIDER,
                          session_id: str | None = None,
                          ws_send=None, websocket=None) -> str | None:
-    """Run AIAgent as an async subprocess, streaming tokens in real-time via ws_send."""
     script = _build_agent_script(query, model, provider, session_id)
 
     proc = await asyncio.create_subprocess_exec(
@@ -115,7 +114,6 @@ async def stream_hermes(query: str, model: str = DEFAULT_MODEL,
     decoder = codecs.getincrementaldecoder("utf-8")("replace")
     buffer = b""
     sid = None
-    sentinel_found = False
 
     try:
         while True:
@@ -125,42 +123,40 @@ async def stream_hermes(query: str, model: str = DEFAULT_MODEL,
             if not chunk:
                 break
             buffer += chunk
-            data_processed = False
-            while True:
-                # Check for end sentinel
-                idx = buffer.find(end_sentinel)
-                if idx == 0 and not data_processed:
-                    sentinel_found = True
-                    tail = buffer[len(end_sentinel):]
+
+            while buffer:
+                ap_idx = buffer.find(approval_sentinel)
+                end_idx = buffer.find(end_sentinel)
+
+                if end_idx != -1 and (ap_idx == -1 or end_idx < ap_idx):
+                    if end_idx > 0:
+                        text = decoder.decode(buffer[:end_idx], final=False)
+                        if text and ws_send:
+                            await ws_send(text)
+                    tail = buffer[end_idx + len(end_sentinel):]
                     for part in tail.split(b"\x1e"):
                         if part.startswith(b"session_id="):
                             sid = part.decode().split("=", 1)[1].strip()
                     buffer = b""
                     break
-                # Check for approval request
-                ap_idx = buffer.find(approval_sentinel)
+
                 if ap_idx != -1:
-                    # Decode and send anything before the approval request
-                    pre = buffer[:ap_idx]
-                    if pre:
-                        text = decoder.decode(pre, final=False)
+                    if ap_idx > 0:
+                        text = decoder.decode(buffer[:ap_idx], final=False)
                         if text and ws_send:
                             await ws_send(text)
-                    # Extract approval JSON (between \x1eAPPROVAL\x1e and next \x1e)
-                    rest = buffer[ap_idx + len(approval_sentinel):]
-                    end = rest.find(b"\x1e")
+                    inner = buffer[ap_idx + len(approval_sentinel):]
+                    end = inner.find(b"\x1e")
                     if end == -1:
-                        # Incomplete approval payload, wait for more data
-                        # Put back the unprocessed prefix
                         buffer = buffer[ap_idx:]
                         break
-                    raw = rest[:end].decode("utf-8")
+                    raw = inner[:end].decode("utf-8")
                     try:
                         app_data = json.loads(raw)
                     except json.JSONDecodeError:
                         app_data = {"command": raw, "description": ""}
-                    buffer = rest[end + 1:]
-                    # Send approval request to browser and wait
+                    buffer = inner[end + 1:]
+                    fut = None
                     if ws_send and websocket:
                         fut = asyncio.get_running_loop().create_future()
                         pending_approvals[websocket] = fut
@@ -170,44 +166,24 @@ async def stream_hermes(query: str, model: str = DEFAULT_MODEL,
                         except asyncio.TimeoutError:
                             choice = "deny"
                         finally:
-                            pending_approvals.pop(websocket, None)
-                        # Write choice to subprocess stdin
-                        proc.stdin.write((choice + "\n").encode())
-                        await proc.stdin.drain()
-                        data_processed = True
-                        continue  # re-scan buffer for more content
+                            if fut and websocket in pending_approvals:
+                                pending_approvals.pop(websocket, None)
                     else:
-                        # No browser to ask — deny
-                        proc.stdin.write(b"deny\n")
-                        await proc.stdin.drain()
-                        continue
-                # Check for end sentinel at any position
-                idx = buffer.find(end_sentinel)
-                if idx != -1:
-                    pre = buffer[:idx]
-                    if pre:
-                        text = decoder.decode(pre, final=False)
-                        if text and ws_send:
-                            await ws_send(text)
-                    sentinel_found = True
-                    tail = buffer[idx + len(end_sentinel):]
-                    for part in tail.split(b"\x1e"):
-                        if part.startswith(b"session_id="):
-                            sid = part.decode().split("=", 1)[1].strip()
-                    buffer = b""
-                    break
-                # Normal content — decode and stream
+                        choice = "deny"
+                    proc.stdin.write((choice + "\n").encode())
+                    await proc.stdin.drain()
+                    continue
+
                 text = decoder.decode(buffer, final=False)
                 buffer = b""
                 if text and ws_send:
                     await ws_send(text)
                 break
 
-        if sentinel_found:
-            try:
-                await asyncio.wait_for(proc.stdout.read(), timeout=5)
-            except asyncio.TimeoutError:
-                pass
+        try:
+            await asyncio.wait_for(proc.stdout.read(), timeout=5)
+        except asyncio.TimeoutError:
+            pass
     except asyncio.TimeoutError:
         proc.kill()
         if ws_send:
@@ -352,30 +328,37 @@ async def nats_listener(nc):
 
 
 async def _nats_call_hermes(query, model, provider, sid):
-    """NATS: run hermes and collect full output (pipe mode)."""
-    cmd = ["hermes", "chat", "-q", query, "-Q",
-           "-m", model, "--provider", provider]
-    if sid:
-        cmd.extend(["--resume", sid])
-
+    nats_script = f"""
+import sys, os, subprocess
+sys.path.insert(0, {repr(HERMES_AGENT_PATH)})
+os.environ["PYTHONIOENCODING"] = "utf-8"
+from run_agent import AIAgent, _sanitize_surrogates
+msg = {repr(query)}
+agent = AIAgent(model={repr(model)}, provider={repr(provider)},
+                quiet_mode=True, skip_context_files=True, skip_memory=True)
+{"agent.session_id = " + repr(sid) if sid else ""}
+result = agent.run_conversation(user_message=msg)
+sid = getattr(agent, "session_id", None) or ""
+output = (result.get("content", "") or "").strip()
+print(output)
+if sid:
+    print("session_id:" + sid, file=sys.stderr)
+"""
     start = time.time()
     proc = await asyncio.create_subprocess_exec(
-        *cmd,
+        HERMES_VENV_PYTHON, "-u", "-c", nats_script,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
     stdout, stderr = await proc.communicate()
     elapsed = time.time() - start
-
     output = stdout.decode("utf-8", "replace").strip()
     err = stderr.decode("utf-8", "replace").strip()
-
     nsid = None
     for line in err.splitlines():
         if line.startswith("session_id:"):
             nsid = line.split(":", 1)[1].strip()
             break
-
     return {
         "type": "response",
         "success": proc.returncode == 0,
