@@ -163,6 +163,7 @@
   .md-content p + p { margin-top: 8px; }
   .md-content ul, .md-content ol { margin: 4px 0; padding-left: 22px; }
   .md-content li { margin: 0; }
+  .md-content li + li { margin-top: 0; }
   .md-content li p { margin: 0; }
   .md-content li > * + * { margin-top: 0; }
   .md-content code {
@@ -758,7 +759,7 @@ function saveChat() {
                : null;
     if (!role) return;
     const content = role === 'bot'
-      ? el.querySelector('.md-content')?.textContent || ''
+      ? el.querySelector('.md-content')?.dataset.markdown || el.querySelector('.md-content')?.textContent || ''
       : el.textContent || '';
     const meta = el.querySelector('.meta');
     let extra = {};
@@ -884,7 +885,9 @@ function connect() {
       // Finalize: render markdown in stream target
       const target = window._streamTarget;
       if (target) {
-        target.innerHTML = marked.parse(target.textContent || '');
+        const raw = target.textContent || '';
+        target.dataset.markdown = raw;
+        target.innerHTML = marked.parse(raw);
         // Add meta below
         const meta = document.createElement('div');
         meta.className = 'meta';
