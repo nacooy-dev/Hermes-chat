@@ -161,7 +161,7 @@
   .md-content h4, .md-content h5, .md-content h6 { font-size: 14px; margin: 8px 0 2px; font-weight: 600; }
   .md-content p { margin: 0; }
   .md-content > p + p { margin-top: 10px; }
-  .md-content ul, .md-content ol { margin: 4px 0; padding-left: 22px; }
+  .md-content ul, .md-content ol { margin: 0; padding-left: 22px; }
   .md-content li { margin: 0; }
   .md-content li + li { margin-top: 0; }
   .md-content li p { margin: 0; }
@@ -513,28 +513,22 @@
           <option value='{"model":"sensenova-6.7-flash-lite","provider":"sensenova"}'>SenseNova Flash Lite</option>
         </optgroup>
         <optgroup label="OpenCode Zen (Free)">
-          <option value='{"model":"deepseek-v4-flash-free","provider":"opencode"}'>DeepSeek V4 Flash</option>
-          <option value='{"model":"minimax-m2.5-free","provider":"opencode"}'>MiniMax M2.5</option>
-          <option value='{"model":"kimi-k2.5-free","provider":"opencode"}'>Kimi K2.5</option>
-          <option value='{"model":"glm-4.7-free","provider":"opencode"}'>GLM 4.7</option>
-          <option value='{"model":"qwen3.6-plus-free","provider":"opencode"}'>Qwen 3.6 Plus</option>
-          <option value='{"model":"mimo-v2-flash-free","provider":"opencode"}'>MiMo V2 Flash</option>
-          <option value='{"model":"ling-2.6-flash-free","provider":"opencode"}'>Ling 2.6 Flash</option>
+          <option value='{"model":"deepseek-v4-flash-free","provider":"opencode-zen"}' selected>DeepSeek V4 Flash</option>
+          <option value='{"model":"minimax-m2.5-free","provider":"opencode-zen"}'>MiniMax M2.5</option>
         </optgroup>
-        <optgroup label="NVIDIA NIM">
-          <option value='{"model":"minimaxai/minimax-m2.5","provider":"nvidia"}'>MiniMax M2.5</option>
-          <option value='{"model":"qwen/qwen3.5-122b-a10b","provider":"nvidia"}'>Qwen 3.5 122B</option>
+        <optgroup label="SenseNova (免费额度)">
+          <option value='{"model":"deepseek-v4-flash","provider":"sensenova"}'>DeepSeek V4 Flash</option>
         </optgroup>
         <optgroup label="OpenCode Zen (付费)">
-          <option value='{"model":"deepseek-v4-pro","provider":"opencode"}'>DeepSeek V4 Pro</option>
-          <option value='{"model":"gpt-5-nano","provider":"opencode"}'>GPT 5 Nano</option>
-          <option value='{"model":"gpt-5.4-mini","provider":"opencode"}'>GPT 5.4 Mini</option>
-          <option value='{"model":"claude-sonnet-4-6","provider":"opencode"}'>Claude Sonnet 4.6</option>
-          <option value='{"model":"claude-haiku-4-5","provider":"opencode"}'>Claude Haiku 4.5</option>
-          <option value='{"model":"gemini-3-flash","provider":"opencode"}'>Gemini 3 Flash</option>
-          <option value='{"model":"kimi-k2.6","provider":"opencode"}'>Kimi K2.6</option>
-          <option value='{"model":"minimax-m2.7","provider":"opencode"}'>MiniMax M2.7</option>
-          <option value='{"model":"glm-5","provider":"opencode"}'>GLM 5</option>
+          <option value='{"model":"deepseek-v4-pro","provider":"opencode-zen"}'>DeepSeek V4 Pro</option>
+          <option value='{"model":"gpt-5-nano","provider":"opencode-zen"}'>GPT 5 Nano</option>
+          <option value='{"model":"gpt-5.4-mini","provider":"opencode-zen"}'>GPT 5.4 Mini</option>
+          <option value='{"model":"claude-sonnet-4-6","provider":"opencode-zen"}'>Claude Sonnet 4.6</option>
+          <option value='{"model":"claude-haiku-4-5","provider":"opencode-zen"}'>Claude Haiku 4.5</option>
+          <option value='{"model":"gemini-3-flash","provider":"opencode-zen"}'>Gemini 3 Flash</option>
+          <option value='{"model":"kimi-k2.6","provider":"opencode-zen"}'>Kimi K2.6</option>
+          <option value='{"model":"minimax-m2.7","provider":"opencode-zen"}'>MiniMax M2.7</option>
+          <option value='{"model":"glm-5","provider":"opencode-zen"}'>GLM 5</option>
         </optgroup>
       </select>
       <div class="status">

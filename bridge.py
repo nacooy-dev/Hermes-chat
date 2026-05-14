@@ -24,8 +24,8 @@ HERMES_VENV_PYTHON = "/Users/lvyun/.hermes/hermes-agent/venv/bin/python"
 HERMES_AGENT_PATH = "/Users/lvyun/.hermes/hermes-agent"
 
 # Default model/provider (can be overridden per request)
-DEFAULT_MODEL = "deepseek-v4-flash"
-DEFAULT_PROVIDER = "sensenova"
+DEFAULT_MODEL = "deepseek-v4-flash-free"
+DEFAULT_PROVIDER = "opencode-zen"
 
 # ── Streaming Bridge (uses AIAgent API) ─────────────
 
